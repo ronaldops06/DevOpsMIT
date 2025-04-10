@@ -1,0 +1,29 @@
+version: '2.4'
+
+services:
+  db:
+    image: postgres
+    restart: always
+    volumes:
+     - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: somnia
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: senha123
+    ports:
+      - 5432:5432
+  somnia-api:
+    build: .
+    environment:
+     - ASPNETCORE_ENVIRONMENT=Development
+     - ASPNETCORE_URLS=http://+:5000
+     - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=somnia;Username=postgres;Password=senha123
+    command: ["dotnet", "ef", "database", "update"]
+    image: ronaldops06/somnia-api
+    container_name: somnia-api
+    ports:
+     - "5000:5000"
+    depends_on:
+     - db
+volumes:
+  pgdata:

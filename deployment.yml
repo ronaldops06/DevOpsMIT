@@ -1,0 +1,244 @@
+# Postgres
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgdata
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:latest
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "somnia"
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "senha123"
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: pgdata
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: pgdata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+  selector:
+    app: postgres
+---
+# Aplicação
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: somnia
+  labels:
+    app: somnia
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: somnia
+  template:
+    metadata:
+      labels:
+        app: somnia
+    spec:
+      containers:
+      - name: somnia
+        image: ronaldops06/somnia-api:1.2
+        env:
+          - name: ASPNETCORE_ENVIRONMENT
+            value: "Development"
+          - name: ASPNETCORE_URLS
+            value: "http://+:5000"
+          - name: ConnectionStrings__Default
+            value: "Host=postgres-service;Port=5432;Database=somnia;Username=postgres;Password=senha123"
+        ports:
+        - containerPort: 5000
+        readinessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---          
+apiVersion: v1
+kind: Service
+metadata:
+  name: somnia-service
+spec:
+  selector:
+    app: somnia
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: NodePort
+---
+# Prometheus
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus-pv
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/data"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      initContainers:
+      - name: volume-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R 65534:65534 /prometheus"]
+        volumeMounts:
+        - name: prometheus-storage
+          mountPath: /prometheus
+      containers:
+      - name: prometheus
+        image: prom/prometheus
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: prometheus-storage
+          mountPath: /prometheus
+        args:
+        - "--config.file=/etc/prometheus/prometheus.yml"
+        - "--storage.tsdb.path=/prometheus"
+        - "--web.console.templates=/etc/prometheus/consoles"
+        - "--web.console.libraries=/etc/prometheus/console_libraries"
+      volumes:
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: prometheus-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+  selector:
+    app: prometheus
+---
+# Grafana
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:latest
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "fe54r5Y13$"
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+      volumes:
+        - name: grafana-storage
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: grafana
+

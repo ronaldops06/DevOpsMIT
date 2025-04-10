@@ -1,0 +1,30 @@
+name: Implantar no Kubernetes via EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout do código
+      uses: actions/checkout@v3
+
+    - name: Conectar e implantar na instância EC2
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          # Verificar se o Minikube está em execução
+          if ! minikube status; then
+            # Iniciar o Minikube se não estiver em execução
+            minikube start --driver=docker
+          fi
+
+          # Aplicar os manifests do Kubernetes
+          kubectl apply -f /home/ec2-user/manifests/deployment.yaml
